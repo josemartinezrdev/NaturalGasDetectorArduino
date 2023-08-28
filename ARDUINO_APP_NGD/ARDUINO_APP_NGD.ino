@@ -7,15 +7,31 @@ char password[16]; // Almacenar la contraseña, maximo 16 caracteres.
 int timeInit = 0;
 int timeOut = 15000; // Tiempo maximo de espera (15 Seg).
 
-int led = 2;
+int LED_ALARMA = 2; //Pin 2 como LED de alarma
+int BUZZ_ALARMA = 4; //Pin 4 como alarma del gas.
+
+int LED_APP = 19; //Pin 19 como LED para probar si hay conexión
+int GAS = 18; //Pin 18 como controlador de la valvula solenoide.
+int SYSTEM = 21; //Pin 21 como controlador de corriente del sensor.
+
+int LECT_GAS = 35; //Pin 35 como lector del sensor de gas MQ-4.
+
+int VAL_GAS; //Variable que almacenara las PPM en el momento de la fuga.
 
 BluetoothSerial SerialBT; //Creando el objeto de la clase BluetoothSerial.
+WiFiServer server(80);
 
 void setup() {
   Serial.begin(9600); //Comunicacion serial a 9600 baudios.
   SerialBT.begin("ESP32"); // Nombre del dispositivo Bluetooth visible para otros dispositivos.
 
-  pinMode(led, OUTPUT);
+  //Apagar todos los pines de salidas.
+
+  digitalWrite(LED_ALARMA, LOW);
+  digitalWrite(BUZZ_ALARMA, LOW);
+  digitalWrite(LED_APP, LOW);
+  digitalWrite(GAS, LOW);
+  digitalWrite(SYSTEM, LOW);
 
   // Esperar a que se establezca la conexión BT
   while (!SerialBT.available()) {
@@ -32,8 +48,8 @@ void setup() {
   if (commaIndex != -1) {
     data.substring(0, commaIndex).toCharArray(ssid, sizeof(ssid)); // Almacenar el SSID en la variable 'ssid'
     data.substring(commaIndex + 1).toCharArray(password, sizeof(password)); // Almacenar la contraseña en la variable 'password'
-    Serial.println("SSID: " + String(ssid)); //Eliminar en fase final
-    Serial.println("Contraseña: " + String(password)); //Eliminar en fase final
+    Serial.println("SSID: " + String(ssid)); //Comentar en fase final
+    Serial.println("Contraseña: " + String(password)); //Comentar en fase final
   }
 
   timeInit = millis(); //Iniciar a contar 15 segundos
@@ -41,27 +57,67 @@ void setup() {
   // Conectar el ESP32 a la red WiFi utilizando los datos recibidos mediante BT desde Android
   WiFi.begin(ssid, password);
 
-  Serial.print("Conectando a la red WiFi..."); //Eliminar en fase final
+  Serial.print("Conectando a la red WiFi..."); //Comentar en fase final
   while (WiFi.status() != WL_CONNECTED) { //Verificar si esta desconectado
 
     if (millis() - timeInit >= timeOut) { //Verificar si no han pasado 15 segundos
       Serial.println("\n¡Error! No se pudo conectar a la red WiFi en 15 segundos."); //Eliminar en fase final
+      timeInit = 0;
       break; //Detener el intento de conexión
     }
     delay(500);
-    Serial.print(".");
+    Serial.print("."); //Comentar en fase final
   }
 
   if (WiFi.status() == WL_CONNECTED) { //verificar si se conecta a wifi
     Serial.println("\nConexión WiFi establecida");
-    Serial.println(WiFi.localIP()); //Eliminar en fase final
-    digitalWrite(led, HIGH); //Eliminar en fase final
-
+    Serial.println(WiFi.localIP()); //Comentar en fase final
     SerialBT.println(WiFi.localIP()); //Enviando la IP a la aplicación
-
+    server.begin();
   }
+
+  //Configurar los pines como salida
+
+  pinMode(LED_ALARMA, OUTPUT);
+  pinMode(BUZZ_ALARMA, OUTPUT);
+  pinMode(LED_APP, OUTPUT);
+  pinMode(GAS, OUTPUT);
+  pinMode(SYSTEM, OUTPUT);
+  pinMode(LECT_GAS, ANALOG);
+  pinMode(23, OUTPUT);
+
 }
 
 void loop() {
-  
+
+WiFiClient client = server.available();
+  if (client) {
+    if (client.connected()) {
+      String requestData = client.readStringUntil('\r');
+      if (requestData.indexOf("GET /onLed") != -1) {
+        digitalWrite(LED_APP, HIGH);
+      }
+      if (requestData.indexOf("GET /offLed") != -1) {
+        digitalWrite(LED_APP, LOW);
+      }
+      if (requestData.indexOf("GET /onSystem") != -1) {
+        digitalWrite(SYSTEM, HIGH);
+      }
+      if (requestData.indexOf("GET /offSystem") != -1) {
+        digitalWrite(SYSTEM, LOW);
+      }
+      if (requestData.indexOf("GET /onGas") != -1) {
+        digitalWrite(GAS, HIGH);
+      }
+      if (requestData.indexOf("GET /offGas") != -1) {
+        digitalWrite(GAS, LOW);
+      }
+      client.println("HTTP/1.1 200 OK");
+      client.println("Content-Type: text/html");
+      client.println("");
+      client.println("<!DOCTYPE HTML>");
+      delay(10);
+      client.stop();
+    }
+  }
 }
