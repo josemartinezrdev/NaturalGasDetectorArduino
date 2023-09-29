@@ -4,15 +4,20 @@
 
 char ssid[16]; // Almacenar el nombre de la red, maximo 16 caracteres.
 char password[16]; // Almacenar la contraseña, maximo 16 caracteres.
+
 int timeInit = 0;
 int timeOut = 15000; // Tiempo maximo de espera (15 Seg).
+
+unsigned long timeStart;
+unsigned long timeAct;
+int timeEnd = 3000;
 
 int LED_ALARMA = 2; //Pin 2 como LED de alarma
 int BUZZ_ALARMA = 4; //Pin 4 como alarma del gas.
 
-int LED_APP = 19; //Pin 19 como LED para probar si hay conexión
+int LED_APP = 23; //Pin 19 como LED para probar si hay conexión
 int GAS = 18; //Pin 18 como controlador de la valvula solenoide.
-int SYSTEM = 21; //Pin 21 como controlador de corriente del sensor.
+int SYSTEM = 19; //Pin 21 como controlador de corriente del sensor.
 
 int LECT_GAS = 35; //Pin 35 como lector del sensor de gas MQ-4.
 
@@ -21,17 +26,10 @@ int VAL_GAS; //Variable que almacenara las PPM en el momento de la fuga.
 BluetoothSerial SerialBT; //Creando el objeto de la clase BluetoothSerial.
 WiFiServer server(80);
 
+
 void setup() {
   Serial.begin(9600); //Comunicacion serial a 9600 baudios.
   SerialBT.begin("ESP32"); // Nombre del dispositivo Bluetooth visible para otros dispositivos.
-
-  //Apagar todos los pines de salidas.
-
-  digitalWrite(LED_ALARMA, LOW);
-  digitalWrite(BUZZ_ALARMA, LOW);
-  digitalWrite(LED_APP, LOW);
-  digitalWrite(GAS, LOW);
-  digitalWrite(SYSTEM, LOW);
 
   // Esperar a que se establezca la conexión BT
   while (!SerialBT.available()) {
@@ -73,6 +71,7 @@ void setup() {
     Serial.println("\nConexión WiFi establecida");
     Serial.println(WiFi.localIP()); //Comentar en fase final
     SerialBT.println(WiFi.localIP()); //Enviando la IP a la aplicación
+    digitalWrite(SYSTEM, HIGH);
     server.begin();
   }
 
@@ -84,7 +83,6 @@ void setup() {
   pinMode(GAS, OUTPUT);
   pinMode(SYSTEM, OUTPUT);
   pinMode(LECT_GAS, ANALOG);
-  pinMode(23, OUTPUT);
 
 }
 
@@ -94,24 +92,28 @@ WiFiClient client = server.available();
   if (client) {
     if (client.connected()) {
       String requestData = client.readStringUntil('\r');
-      if (requestData.indexOf("GET /onLed") != -1) {
-        digitalWrite(LED_APP, HIGH);
-      }
-      if (requestData.indexOf("GET /offLed") != -1) {
-        digitalWrite(LED_APP, LOW);
-      }
       if (requestData.indexOf("GET /onSystem") != -1) {
         digitalWrite(SYSTEM, HIGH);
       }
+      //Sistema
       if (requestData.indexOf("GET /offSystem") != -1) {
         digitalWrite(SYSTEM, LOW);
       }
+      if (requestData.indexOf("GET /onLed") != -1) {
+        digitalWrite(LED_APP, HIGH);
+      }
+      //Led
+      if (requestData.indexOf("GET /offLed") != -1) {
+        digitalWrite(LED_APP, LOW);
+      }
+      //Electrovalvula
       if (requestData.indexOf("GET /onGas") != -1) {
         digitalWrite(GAS, HIGH);
       }
       if (requestData.indexOf("GET /offGas") != -1) {
         digitalWrite(GAS, LOW);
       }
+      //Servidor
       client.println("HTTP/1.1 200 OK");
       client.println("Content-Type: text/html");
       client.println("");
@@ -120,4 +122,34 @@ WiFiClient client = server.available();
       client.stop();
     }
   }
+
+  //Detectando el gas y tomando acciones
+
+  VAL_GAS = analogRead(LECT_GAS);
+
+  Serial.println(analogRead(LECT_GAS));
+
+  if (VAL_GAS > 1000 && VAL_GAS < 4096) {
+
+    if(timeStart == 0){
+      timeStart = millis();
+      digitalWrite(LED_ALARMA, HIGH);
+      digitalWrite(BUZZ_ALARMA, HIGH);
+    }else{
+      timeAct = millis();
+      if((timeAct - timeStart) >= timeEnd && ((timeAct - timeStart) / 200) % 2 == 0){
+        digitalWrite(LED_ALARMA, HIGH);
+        delay(200);
+        digitalWrite(LED_ALARMA, LOW);
+        delay(200);
+        digitalWrite(GAS, HIGH);
+      }
+    }
+  } else {
+    digitalWrite(LED_ALARMA, LOW);
+    digitalWrite(BUZZ_ALARMA, LOW);
+    digitalWrite(GAS, LOW);
+    timeStart = 0;
+  }
+
 }
